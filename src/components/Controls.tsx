@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import type {
-  ConnectorParams,
-  OrientationMode,
-  StickType,
+import {
+  evenGapsDeg,
+  type ConnectorParams,
+  type OrientationMode,
+  type StickType,
 } from '../geometry/connector';
 
 interface ControlsProps {
@@ -145,8 +146,75 @@ export function Controls({
           min={1}
           max={24}
           step={1}
-          onChange={(v) => onChange({ numSticks: Math.round(v) })}
+          onChange={(v) => {
+            const n = Math.round(v);
+            onChange({
+              numSticks: n,
+              // Keep the custom gap list in sync with the stick count.
+              spacingAnglesDeg: p.spacingAnglesDeg ? evenGapsDeg(n) : null,
+            });
+          }}
         />
+        <label className="field checkbox">
+          <input
+            type="checkbox"
+            checked={p.spacingAnglesDeg !== null}
+            onChange={(e) =>
+              onChange({
+                spacingAnglesDeg: e.target.checked
+                  ? evenGapsDeg(p.numSticks)
+                  : null,
+              })
+            }
+          />
+          <span>Custom angles between sticks</span>
+        </label>
+        {p.spacingAnglesDeg && (
+          <div className="field">
+            <span className="field-label">
+              Gap from stick i to stick i+1 (wraps around)
+              <em>°</em>
+            </span>
+            <div className="angle-grid">
+              {p.spacingAnglesDeg.map((v, i) => (
+                <label key={i} className="angle-cell">
+                  <span>
+                    {i + 1}→{((i + 1) % p.numSticks) + 1}
+                  </span>
+                  <input
+                    type="number"
+                    min={5}
+                    max={355}
+                    step={1}
+                    value={Math.round(v * 10) / 10}
+                    onChange={(e) => {
+                      const nv = Number(e.target.value);
+                      if (!Number.isFinite(nv)) return;
+                      const next = p.spacingAnglesDeg!.slice();
+                      next[i] = Math.min(355, Math.max(5, nv));
+                      onChange({ spacingAnglesDeg: next });
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            {(() => {
+              const sum = p.spacingAnglesDeg!.reduce((a, b) => a + b, 0);
+              const ok = Math.abs(sum - 360) < 0.05;
+              return (
+                <p className={ok ? 'angle-sum' : 'angle-sum bad'}>
+                  Σ = {Math.round(sum * 10) / 10}°{!ok && ' — should be 360° (will be rescaled)'}
+                </p>
+              );
+            })()}
+            <button
+              className="even-out"
+              onClick={() => onChange({ spacingAnglesDeg: evenGapsDeg(p.numSticks) })}
+            >
+              Reset to even spacing
+            </button>
+          </div>
+        )}
         <NumberField
           label="Umbrella slope angle"
           unit="°"

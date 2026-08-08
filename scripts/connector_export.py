@@ -13,6 +13,8 @@ Params (all optional, defaults match the web app):
   rectHeight          narrow side [mm] (RECTANGULAR only)
   numSticks           number of radial arms
   umbrellaAngleDeg    arm slope away from the hub axis
+  spacingAnglesDeg    custom angles between consecutive sticks [deg], one per
+                      stick, summing to 360 (null = even spacing)
   includeCenterStem   socket along the hub axis from the bottom
   orientationMode     TANGENTIAL (wide side around ring) | RADIAL (upright)
   printerOffset       clearance per side [mm]
@@ -36,6 +38,7 @@ DEFAULTS = {
     "rectHeight": 4.0,
     "numSticks": 6,
     "umbrellaAngleDeg": 45.0,
+    "spacingAnglesDeg": None,
     "includeCenterStem": False,
     "orientationMode": "TANGENTIAL",
     "printerOffset": 0.3,
@@ -118,6 +121,23 @@ def place(solid: Manifold, x_axis, y_axis, z_axis, origin) -> Manifold:
     return solid.transform(m)
 
 
+def resolve_gaps_deg(spacing, n: int) -> list[float]:
+    """Per-stick gaps [deg]. Even spacing when the custom list is
+    missing/mismatched/invalid; rescaled to sum to 360 otherwise."""
+    count = max(1, round(n))
+    if (
+        not spacing
+        or len(spacing) != count
+        or any(not math.isfinite(v) or v <= 0 for v in spacing)
+    ):
+        return [360.0 / count] * count
+    total = sum(spacing)
+    if abs(total - 360.0) < 1e-9:
+        return list(spacing)
+    k = 360.0 / total
+    return [v * k for v in spacing]
+
+
 def build(p: dict) -> Manifold:
     alpha = math.radians(p["umbrellaAngleDeg"])
     sin_a, cos_a = math.sin(alpha), math.cos(alpha)
@@ -139,8 +159,9 @@ def build(p: dict) -> Manifold:
     cuts = []
 
     n = max(1, round(p["numSticks"]))
+    gaps = resolve_gaps_deg(p.get("spacingAnglesDeg"), n)
+    phi = 0.0
     for i in range(n):
-        phi = 2 * math.pi * i / n
         radial = np.array([math.cos(phi), math.sin(phi), 0.0])
         d = radial * sin_a + np.array([0.0, 0.0, cos_a])
         d = d / np.linalg.norm(d)
@@ -178,6 +199,9 @@ def build(p: dict) -> Manifold:
             cuts.append(
                 place(hole, d, y_axis, height_axis, d * (face - p["socketDepth"] * 0.55))
             )
+
+        # Advance to the next arm's azimuth by the gap after this one.
+        phi += math.radians(gaps[i])
 
     # Hub with a flat bottom at z_bottom (prints without support).
     z_bottom = -(oh / 2) * sin_a

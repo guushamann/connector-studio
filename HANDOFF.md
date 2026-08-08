@@ -15,7 +15,9 @@ npm run dev
 
 - `src/geometry/connector.ts` — parametric geometry (single source of truth for
   the preview). All params: stickType (RECTANGULAR/SQUARE/ROUND), rectWidth/
-  rectHeight, numSticks, umbrellaAngleDeg, includeCenterStem, orientationMode
+  rectHeight, numSticks, umbrellaAngleDeg, spacingAnglesDeg (custom per-stick
+  gaps in °, one per stick, must sum to 360; null = even spacing),
+  includeCenterStem, orientationMode
   (TANGENTIAL/RADIAL), printerOffset, socketDepth, wallThickness,
   screwHoleDiameter (0=off), chamferEntry (0=off).
 - `scripts/connector_export.py` — **same geometry** rebuilt with manifold3d for

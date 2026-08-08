@@ -13,6 +13,12 @@ export interface ConnectorParams {
   numSticks: number;
   /** Slope of the arms away from the hub axis (0 = straight up). */
   umbrellaAngleDeg: number;
+  /**
+   * Custom angles between consecutive sticks [°], one entry per stick
+   * (entry i = gap from stick i to stick i+1, wrapping around). Must sum
+   * to 360. `null` = even spacing (360 / numSticks).
+   */
+  spacingAnglesDeg: number[] | null;
   includeCenterStem: boolean;
   orientationMode: OrientationMode;
   /** Clearance added per side so printed sticks actually fit. */
@@ -42,6 +48,7 @@ export const DEFAULT_PARAMS: ConnectorParams = {
   rectHeight: 4.0,
   numSticks: 6,
   umbrellaAngleDeg: 45.0,
+  spacingAnglesDeg: null,
   includeCenterStem: false,
   orientationMode: 'TANGENTIAL',
   printerOffset: 0.3,
@@ -52,6 +59,34 @@ export const DEFAULT_PARAMS: ConnectorParams = {
 };
 
 const material = new THREE.MeshStandardMaterial();
+
+/** Even gaps [°] for `n` sticks. */
+export function evenGapsDeg(n: number): number[] {
+  return Array.from({ length: Math.max(1, Math.round(n)) }, () => 360 / Math.max(1, Math.round(n)));
+}
+
+/**
+ * Resolve the per-stick gaps [°]. Falls back to even spacing when the custom
+ * list is missing/mismatched/invalid; rescales proportionally when it does
+ * not sum to 360 so the ring always closes.
+ */
+export function resolveGapsDeg(
+  spacing: number[] | null | undefined,
+  n: number,
+): number[] {
+  const count = Math.max(1, Math.round(n));
+  if (
+    !spacing ||
+    spacing.length !== count ||
+    spacing.some((v) => !Number.isFinite(v) || v <= 0)
+  ) {
+    return evenGapsDeg(count);
+  }
+  const sum = spacing.reduce((a, b) => a + b, 0);
+  if (Math.abs(sum - 360) < 1e-9) return spacing.slice();
+  const k = 360 / sum;
+  return spacing.map((v) => v * k);
+}
 
 function toCsgMesh(geometry: THREE.BufferGeometry): THREE.Mesh {
   const g = geometry.index ? geometry.toNonIndexed() : geometry;
@@ -178,8 +213,9 @@ export function buildConnector(p: ConnectorParams): ConnectorResult {
   });
 
   const N = Math.max(1, Math.round(p.numSticks));
+  const gaps = resolveGapsDeg(p.spacingAnglesDeg, N);
+  let phi = 0;
   for (let i = 0; i < N; i++) {
-    const phi = (2 * Math.PI * i) / N;
     const radial = new THREE.Vector3(Math.cos(phi), Math.sin(phi), 0);
     // Arm direction: tilted `alpha` away from the hub axis.
     const d = radial
@@ -244,6 +280,9 @@ export function buildConnector(p: ConnectorParams): ConnectorResult {
     );
     sg.applyMatrix4(sm);
     sticks.add(new THREE.Mesh(sg.index ? sg.toNonIndexed() : sg, stickMat));
+
+    // Advance to the next stick's azimuth by the gap after this one.
+    phi += THREE.MathUtils.degToRad(gaps[i]);
   }
 
   // --- Hub (flat bottom at zBottom so it prints without support) ---
